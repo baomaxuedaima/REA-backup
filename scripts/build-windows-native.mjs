@@ -9,11 +9,23 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const nodeVersion = "22.19.0";
-const compiler = "x86_64-w64-mingw32-g++";
 const cache = join(homedir(), ".cache", "rea-windows-native");
-const inspectionFixture = process.argv[2] === "--inspection-fixture";
-if (process.argv.length > 3 || (process.argv.length > 2 && !inspectionFixture))
+const arguments_ = process.argv.slice(2);
+const inspectionFixture = arguments_.includes("--inspection-fixture");
+const archFlag = arguments_.find((argument) => argument.startsWith("--arch="));
+const architecture = archFlag?.slice("--arch=".length) ?? "x64";
+if (architecture !== "x64" && architecture !== "arm64")
+  throw new Error("Windows native --arch must be x64 or arm64");
+const allowed = new Set(
+  [inspectionFixture ? "--inspection-fixture" : undefined, archFlag].filter(
+    (argument) => argument !== undefined,
+  ),
+);
+if (arguments_.some((argument) => !allowed.has(argument)))
   throw new Error("Unknown Windows native build argument");
+const compilerPrefix =
+  architecture === "arm64" ? "aarch64-w64-mingw32" : "x86_64-w64-mingw32";
+const compiler = `${compilerPrefix}-g++`;
 const output = inspectionFixture
   ? join(root, ".cache", "windows-native-inspection-fixture")
   : join(root, "native", "windows", "build");
@@ -36,7 +48,7 @@ const run = (command, args) => {
 };
 if (process.platform !== "linux")
   throw new Error(
-    "The Windows x64 artifact build lane currently requires Linux and MinGW-w64.",
+    "The Windows native artifact build lane currently requires Linux and MinGW-w64.",
   );
 run(compiler, ["--version"]);
 await mkdir(cache, { recursive: true });
@@ -87,7 +99,8 @@ if (!(await exists(join(headers, "node_api.h")))) {
   run("tar", ["xzf", archive, "-C", cache]);
   headers = join(cache, `node-v${nodeVersion}`, "include", "node");
 }
-const artifact = "rea-windows-x64.node";
+const artifact =
+  architecture === "arm64" ? "rea-windows-arm64.node" : "rea-windows-x64.node";
 // MSVC short-import libraries do not produce a correct Node import table with
 // GNU ld. Generate a GNU delay-import library for the exact stable Node-API
 // symbols; addon.cc binds it to the host executable, whatever its file name.
@@ -107,12 +120,17 @@ const symbols = [
   ),
 ].sort();
 const definition = join(cache, "node-api.def");
-const library = join(cache, "libnode-api.a");
+const library = join(cache, `libnode-api-${architecture}.a`);
 await writeFile(
   definition,
   `LIBRARY node.exe\nEXPORTS\n${symbols.join("\n")}\n`,
 );
-run("x86_64-w64-mingw32-dlltool", ["-d", definition, "-y", library]);
+run(
+  `${compilerPrefix}-dlltool`,
+  architecture === "arm64"
+    ? ["-d", definition, "-l", library]
+    : ["-d", definition, "-y", library],
+);
 run(compiler, [
   "-std=c++17",
   "-O2",
@@ -123,6 +141,7 @@ run(compiler, [
   "-static-libgcc",
   "-static-libstdc++",
   "-Wl,--no-insert-timestamp",
+  ...(architecture === "arm64" ? ["-Wl,--delayload=node.exe"] : []),
   `-I${headers}`,
   "native/windows/src/addon.cc",
   inspectionFixture
@@ -130,6 +149,7 @@ run(compiler, [
     : "native/windows/src/filesystem.cc",
   "native/windows/src/process.cc",
   library,
+  ...(architecture === "arm64" ? ["-ldelayimp"] : []),
   "-ladvapi32",
   "-lbcrypt",
   "-lntdll",
@@ -143,7 +163,7 @@ const bytes = await readFile(join(output, artifact));
 const metadata = {
   packageVersion: packageJson.version,
   platform: "win32",
-  architecture: "x64",
+  architecture,
   abiVersion: 1,
   nodeApiVersion: 8,
   artifact,

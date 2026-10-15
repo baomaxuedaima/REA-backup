@@ -2,6 +2,7 @@ import {
   SUPPORTED_NODE_VERSION_PROSE,
   supportsNodeVersion,
 } from "../domain/runtimeVersion.js";
+import { isWindowsNativeHost } from "../process/WindowsAuthority.js";
 import {
   linuxHopperLauncherCandidates,
   systemLinuxHopperLauncherCandidates,
@@ -134,7 +135,7 @@ const hostCheck = async (host: DoctorHost): Promise<DoctorCheck> => {
   const supported =
     (host.platform === "darwin" && parseMajor(macosVersion) >= 12) ||
     (host.platform === "linux" && supportsReaHost(linuxDistribution)) ||
-    (host.platform === "win32" && host.architecture === "x64");
+    isWindowsNativeHost(host.platform, host.architecture);
   const detail =
     macosVersion ??
     (linuxDistribution === undefined
@@ -142,7 +143,7 @@ const hostCheck = async (host: DoctorHost): Promise<DoctorCheck> => {
       : `${linuxDistribution.id} ${linuxDistribution.versionId ?? "unknown"}`);
   return check("host", supported, detail, {
     remediation:
-      "REA supports macOS 12+, Linux distributions with a recognized apt, dnf, or pacman package family, and the experimental Windows x64 Ghidra P0 boundary; automated Hopper setup additionally requires Ubuntu 24.04+, Fedora 41+, Nobara 44+, 64-bit Arch Linux, CachyOS, or Omarchy.",
+      "REA supports macOS 12+, Linux distributions with a recognized apt, dnf, or pacman package family, and the experimental Windows x64 and ARM64 Ghidra P0 boundary; automated Hopper setup additionally requires Ubuntu 24.04+, Fedora 41+, Nobara 44+, 64-bit Arch Linux, CachyOS, or Omarchy.",
     classification: "unsupported_host",
   });
 };

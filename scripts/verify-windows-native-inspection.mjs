@@ -39,7 +39,12 @@ try {
     join(root, "dist", "generatedPackageMetadata.js"),
     join(workspace, "dist", "generatedPackageMetadata.js"),
   );
-  for (const name of ["manifest.json", "rea-windows-x64.node"])
+  const nativeManifest = JSON.parse(
+    await readFile(join(artifact, "manifest.json"), "utf8"),
+  );
+  if (typeof nativeManifest.artifact !== "string")
+    throw new Error("Windows native inspection fixture omitted its artifact");
+  for (const name of ["manifest.json", nativeManifest.artifact])
     await copyFile(
       join(artifact, name),
       join(workspace, "native", "windows", "build", name),
@@ -62,7 +67,7 @@ import {systemWindowsNativeAuthority} from ${JSON.stringify(loader)};
 const temp=process.env.TEMP;
 const mode=process.argv[2];
 const creation=mode.startsWith('create-');
-const native=creation?createRequire(import.meta.url)(${JSON.stringify(join(workspace, "native", "windows", "build", "rea-windows-x64.node"))}):null;
+const native=creation?createRequire(import.meta.url)(${JSON.stringify(join(workspace, "native", "windows", "build", nativeManifest.artifact))}):null;
 if(creation){
  let failure;
  try{native.call('runtime_create',[temp,'rea-native-created-'])}catch(error){failure=error}

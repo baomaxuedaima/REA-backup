@@ -24,9 +24,12 @@ import { verifyWindowsProtocolInput } from "./lib/windows-protocol-input.mjs";
 import { verifyWindowsJobMemoryLimit } from "./lib/windows-job-memory-limit.mjs";
 import { verifyVolumeRootAppendLease } from "./lib/windows-volume-root-append-lease.mjs";
 
-if (process.platform !== "win32")
+if (
+  process.platform !== "win32" ||
+  (process.arch !== "x64" && process.arch !== "arm64")
+)
   throw new Error(
-    "Windows native conformance requires a real Windows x64 host.",
+    "Windows native conformance requires a real Windows x64 or ARM64 host.",
   );
 const packageRoot = resolve(process.argv[2] ?? ".");
 const { requireWindowsNativeAuthority } = await import(

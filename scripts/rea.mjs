@@ -1,8 +1,41 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import v8 from "node:v8";
+
+// The JavaScript analyzer's parent result budget is half of this process heap.
+// Node's default ceiling on Windows ARM64 is exhausted while a large ASAR is
+// still being admitted, so re-exec with room before any runtime import.
+const targetHeapMb = 16_384;
+const heapMb = Math.floor(
+  v8.getHeapStatistics().heap_size_limit / (1024 * 1024),
+);
+if (
+  process.platform === "win32" &&
+  process.arch === "arm64" &&
+  process.env.REA_HEAP_RESPAWNED !== "1" &&
+  !process.execArgv.some((arg) => arg.startsWith("--max-old-space-size")) &&
+  heapMb + 256 < targetHeapMb
+) {
+  const child = spawn(
+    process.execPath,
+    [`--max-old-space-size=${targetHeapMb}`, ...process.argv.slice(1)],
+    {
+      stdio: "inherit",
+      env: { ...process.env, REA_HEAP_RESPAWNED: "1" },
+    },
+  );
+  child.on("exit", (code) => {
+    process.exit(code ?? 1);
+  });
+  child.on("error", () => {
+    process.exit(1);
+  });
+  await new Promise(() => {});
+}
 
 // Route production MCP before importing Incur. Incur owns registration helpers
 // such as `mcp add`, while the MCP runtime serves the stdio tool catalog.

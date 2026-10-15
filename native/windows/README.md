@@ -1,7 +1,8 @@
 # Windows native controls
 
-REA ships one Windows x64 Node-API 8 addon. Users do not compile it or install
-another runtime. Ghidra and a full JDK remain bring-your-own prerequisites.
+REA ships one Windows Node-API 8 addon for the host architecture, x64 or
+ARM64. Users do not compile it or install another runtime. Ghidra and a full
+JDK remain bring-your-own prerequisites.
 The addon uses Windows 10+ APIs and admits fixed local NTFS volumes only.
 
 The package owns the artifact path. The loader checks the package version,
@@ -10,8 +11,11 @@ There is no environment override for loading an arbitrary native module.
 
 ## Build
 
-The artifact lane requires Linux, MinGW-w64 `x86_64-w64-mingw32-g++`,
-`x86_64-w64-mingw32-dlltool`, and `tar`. It never installs these commands.
+The artifact lane requires Linux, a matching MinGW-w64 compiler
+(`x86_64-w64-mingw32-g++` or `aarch64-w64-mingw32-g++`), the matching
+`dlltool`, and `tar`. It never installs these commands. The default target is
+x64. Pass `--arch=arm64` to build `rea-windows-arm64.node`. One manifest
+describes the artifact just built.
 Node-API headers are reused from the build cache or downloaded from the
 pinned official Node release with its published SHA-256 checked.
 

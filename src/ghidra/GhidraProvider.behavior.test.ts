@@ -490,7 +490,7 @@ describe("Ghidra Windows platform support", () => {
           availabilityCode: "runtime_missing",
           limitations: expect.arrayContaining([
             expect.stringContaining(
-              "matching packaged Windows x64 native addon",
+              "matching packaged Windows x64 or ARM64 native addon",
             ),
             expect.stringContaining(
               "private DACLs, and Job Object ownership automatically",
@@ -595,7 +595,7 @@ describe("Windows Ghidra native failure diagnostics", () => {
             availabilityCode: code,
             limitations: expect.arrayContaining([
               expect.stringContaining(
-                "matching packaged Windows x64 native addon",
+                "matching packaged Windows x64 or ARM64 native addon",
               ),
               expect.stringContaining(
                 "private DACLs, and Job Object ownership automatically",

@@ -220,10 +220,12 @@ protocols in adapters and shared CLI/MCP workflows in the application layer.
 
 ### Windows source checkouts
 
-The published npm package includes the Windows x64 native addon and its
-manifest. A source checkout does not: `native/windows/build/` is ignored by
-Git, and neither `npm ci` nor `npm run build:cached` (or `npm run build`)
-produces `rea-windows-x64.node` or `manifest.json` in that directory.
+The published npm package includes the Windows native addon for the
+architecture the build lane produced, x64 or ARM64, and its manifest. A source
+checkout does not: `native/windows/build/` is ignored by Git, and neither
+`npm ci` nor `npm run build:cached` (or `npm run build`) produces
+`rea-windows-x64.node`, `rea-windows-arm64.node`, or `manifest.json` in that
+directory.
 Windows workflows and tests that require native controls need these artifacts;
 without them, those controls are unavailable even after a successful runtime build.
 

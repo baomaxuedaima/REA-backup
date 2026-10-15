@@ -48,10 +48,15 @@ try {
       `npm pack returned invalid metadata: ${JSON.stringify(packed)}`,
     );
   const packagedPaths = new Set(packageResult.files.map(({ path }) => path));
+  const nativeManifest = JSON.parse(
+    await readFile(join(root, "native/windows/build/manifest.json"), "utf8"),
+  );
+  if (typeof nativeManifest.artifact !== "string")
+    throw new Error("Windows native manifest omitted its artifact name");
   for (const required of [
     "bridge/ghidra/ReaGhidraBridge.java",
     "native/windows/build/manifest.json",
-    "native/windows/build/rea-windows-x64.node",
+    `native/windows/build/${nativeManifest.artifact}`,
     "dist/android/JadxWorkspaceRoot.js",
     "dist/main.js",
     "dist/cli.js",

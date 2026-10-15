@@ -1,7 +1,10 @@
 import { constants } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
-import { inspectWindowsNativeReadiness } from "../process/WindowsAuthority.js";
+import {
+  inspectWindowsNativeReadiness,
+  isWindowsNativeHost,
+} from "../process/WindowsAuthority.js";
 import { systemWindowsNativeAuthority } from "../windows/WindowsNativeLoader.js";
 import { AnalysisCapabilityUnavailableError } from "../domain/analysisErrorCore.js";
 import type { AndroidOperation } from "../domain/android/androidAnalysis.js";
@@ -310,13 +313,13 @@ const requireEngineArchive = async (
 
 const requireSupportedHost = (): void => {
   if (process.platform === "linux" || process.platform === "darwin") return;
-  if (process.platform === "win32" && process.arch === "x64") {
+  if (isWindowsNativeHost(process.platform, process.arch)) {
     const loaded = systemWindowsNativeAuthority();
     if (loaded.available) {
       if (loaded.authority.inspection.protocolStdin === true) return;
       throw configurationFailure(
         "runtime_missing",
-        "The bundled Windows native artifact lacks owned protocol stdin; use a matching current Windows x64 REA package.",
+        "The bundled Windows native artifact lacks owned protocol stdin; use a matching current Windows x64 or ARM64 REA package.",
         {
           platform: process.platform,
           architecture: process.arch,
@@ -355,7 +358,7 @@ const requireSupportedHost = (): void => {
   }
   throw configurationFailure(
     "unsupported_host",
-    `Android JADX subprocess ownership is unsupported on ${process.platform}/${process.arch}; use Linux, macOS, or Windows x64 with its bundled native controls.`,
+    `Android JADX subprocess ownership is unsupported on ${process.platform}/${process.arch}; use Linux, macOS, or Windows x64 or ARM64 with its bundled native controls.`,
     { platform: process.platform },
     "unsupported_host",
   );

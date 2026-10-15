@@ -33,9 +33,16 @@ export interface WindowsNativeCapabilitySet {
   readonly reparse_safe_path_admission: WindowsNativeCapability;
 }
 
+/** Windows hosts that can load the packaged Node-API addon. */
+export const isWindowsNativeHost = (
+  platform: NodeJS.Platform,
+  architecture: string,
+): boolean =>
+  platform === "win32" && (architecture === "x64" || architecture === "arm64");
+
 /** Stable explanation used whenever the native Windows authority is absent. */
 export const WINDOWS_NATIVE_AUTHORITY_UNAVAILABLE_REASON =
-  "Windows native controls are unavailable in this runtime; use the Windows x64 REA package with its matching bundled native artifact.";
+  "Windows native controls are unavailable in this runtime; use the Windows x64 or ARM64 REA package with its matching bundled native artifact.";
 
 /** One readiness observation, shared by diagnostics and security controls. */
 export type WindowsNativeReadiness =
@@ -68,7 +75,8 @@ export const inspectWindowsNativeReadiness = (
       reason: "Windows native authority is not applicable on this host",
       proof: "not-applicable",
       code: "unsupported_host",
-      remediation: "Use a Windows x64 host for Windows native controls.",
+      remediation:
+        "Use a Windows x64 or ARM64 host for Windows native controls.",
     };
   const loaded = observation ?? systemWindowsNativeAuthority();
   if (loaded.available) return { available: true };
@@ -87,11 +95,11 @@ export const inspectWindowsNativeReadiness = (
           : "runtime_unavailable",
     remediation:
       failureStage === "host"
-        ? "Use a Windows x64 host and a supported Node.js runtime with Node-API 8 or newer."
+        ? "Use a Windows x64 or ARM64 host and a supported Node.js runtime with Node-API 8 or newer."
         : failureStage === "artifact"
-          ? "Use the matching Windows x64 REA package, or restore native/windows/build/manifest.json and native/windows/build/rea-windows-x64.node from the same-version rea-agents tarball or build them with native/windows/README.md. The loader checks version, ABI, architecture, and digest before granting authority; no download or install is performed automatically."
+          ? "Use the matching Windows x64 or ARM64 REA package, or restore native/windows/build/manifest.json and native/windows/build/rea-windows-x64.node or native/windows/build/rea-windows-arm64.node from the same-version rea-agents tarball or build them with native/windows/README.md. The loader checks version, ABI, architecture, and digest before granting authority; no download or install is performed automatically."
           : failureStage === "inspection"
-            ? "Install the matching Windows x64 REA package; its native inspection must prove every required security control."
+            ? "Install the matching Windows x64 or ARM64 REA package; its native inspection must prove every required security control."
             : "Inspect the preserved native self-test error. Check that the process's temporary directory is writable local NTFS and that its filesystem, DACL, Job Object, and cleanup operations are permitted. Resolve the reported constraint, then rerun rea doctor; reinstalling Ghidra or Java cannot fix this self-test.",
   };
 };
