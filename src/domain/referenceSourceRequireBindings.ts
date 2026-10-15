@@ -48,13 +48,10 @@ export const unshadowedReferenceSourceRequireCalls = (
     file.program,
     references,
   );
-  const requireLoaderWasWritten = [...references.values()].some(
-    (reference) =>
-      reference.name === "require" &&
-      reference.role === "write" &&
-      (reference.resolution === "unbound" ||
-        reference.resolution === "unknown" ||
-        reference.bindingId === programRequireBinding),
+  const requireLoaderWasWritten = loaderWriteReachesProgramScope(
+    file.program,
+    references,
+    programRequireBinding,
   );
   const isLoaderReference = (identifier: t.Identifier): boolean => {
     const start = identifier.loc?.start;
@@ -175,6 +172,129 @@ const contains = (container: t.Node, node: t.Node): boolean =>
   typeof node.end === "number" &&
   container.start <= node.start &&
   node.end <= container.end;
+
+const loaderWriteReachesProgramScope = (
+  program: t.Program,
+  references: ReadonlyMap<string, JavaScriptSemanticReference>,
+  programRequireBinding: string,
+): boolean => {
+  let reached = false;
+  traverseJavaScriptAst(program, {
+    enter: (node, _parent, readAncestors) => {
+      if (reached || !t.isIdentifier(node, { name: "require" })) return;
+      const start = node.loc?.start;
+      const reference =
+        start === undefined
+          ? undefined
+          : references.get(`${start.line}:${start.column}`);
+      if (reference?.role !== "write") return;
+      if (
+        reference.resolution === "unbound" ||
+        reference.bindingId === programRequireBinding
+      ) {
+        reached = true;
+        return;
+      }
+      if (
+        reference.resolution === "unknown" &&
+        !writeShieldedByLocalBinding(readAncestors())
+      ) {
+        reached = true;
+      }
+    },
+  });
+  return reached;
+};
+
+const bindsRequireIdentifier = (
+  patterns: readonly (t.Node | null | undefined)[],
+): boolean => {
+  const identifiers: t.Node[] = [];
+  const collect = (pattern: t.Node | null | undefined): void => {
+    if (pattern === null || pattern === undefined) return;
+    if (t.isIdentifier(pattern)) {
+      identifiers.push(pattern);
+      return;
+    }
+    if (t.isTSParameterProperty(pattern)) {
+      collect(pattern.parameter);
+      return;
+    }
+    if (
+      t.isObjectPattern(pattern) ||
+      t.isArrayPattern(pattern) ||
+      t.isRestElement(pattern) ||
+      t.isAssignmentPattern(pattern)
+    )
+      identifiers.push(pattern);
+  };
+  for (const pattern of patterns) collect(pattern);
+  return identifiers.some((identifier) =>
+    Object.hasOwn(t.getBindingIdentifiers(identifier), "require"),
+  );
+};
+
+const functionBodyBindsRequire = (body: t.Node | null | undefined): boolean => {
+  if (body === null || body === undefined || !t.isBlockStatement(body))
+    return false;
+  return body.body.some(
+    (statement) =>
+      (t.isVariableDeclaration(statement, { kind: "var" }) &&
+        statement.declarations.some((declaration) =>
+          bindsRequireIdentifier([declaration.id]),
+        )) ||
+      (t.isFunctionDeclaration(statement) &&
+        statement.id !== null &&
+        statement.id !== undefined &&
+        statement.id.name === "require"),
+  );
+};
+
+const blockBindsLexicalRequire = (body: readonly t.Node[]): boolean =>
+  body.some(
+    (statement) =>
+      t.isVariableDeclaration(statement) &&
+      statement.kind !== "var" &&
+      statement.declarations.some((declaration) =>
+        bindsRequireIdentifier([declaration.id]),
+      ),
+  );
+
+const writeShieldedByLocalBinding = (ancestors: readonly t.Node[]): boolean => {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const scope = ancestors[index];
+    if (scope === undefined) continue;
+    if (t.isProgram(scope)) return false;
+    if (t.isFunction(scope)) {
+      if (bindsRequireIdentifier(scope.params)) return true;
+      if (functionBodyBindsRequire(scope.body)) return true;
+      continue;
+    }
+    if (t.isCatchClause(scope) && bindsRequireIdentifier([scope.param]))
+      return true;
+    if (
+      t.isForStatement(scope) ||
+      t.isForInStatement(scope) ||
+      t.isForOfStatement(scope)
+    ) {
+      const head = t.isForStatement(scope) ? scope.init : scope.left;
+      if (
+        head !== null &&
+        head !== undefined &&
+        t.isVariableDeclaration(head) &&
+        head.kind !== "var" &&
+        head.declarations.some((declaration) =>
+          bindsRequireIdentifier([declaration.id]),
+        )
+      )
+        return true;
+      continue;
+    }
+    if (!t.isBlockStatement(scope) && !t.isStaticBlock(scope)) continue;
+    if (blockBindsLexicalRequire(scope.body)) return true;
+  }
+  return false;
+};
 
 const hasUninitializedTopLevelVarRequire = (program: t.Program): boolean => {
   let found = false;

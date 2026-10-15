@@ -44,6 +44,19 @@ it("resolves require calls by lexical binding and source mode", async () => {
       "var require;",
       "console.log(require('./loaded.cjs'));",
     ].join("\n"),
+    "local-param.cjs": [
+      "function patch(require) { with ({}) { require = () => 'local'; } }",
+      "patch(null);",
+      "console.log(require('./loaded.cjs'));",
+    ].join("\n"),
+    "local-fn-var.cjs": [
+      "function patch() {",
+      "  var require;",
+      "  with ({}) { require = () => 'local'; }",
+      "}",
+      "patch();",
+      "console.log(require('./loaded.cjs'));",
+    ].join("\n"),
     "for-of-var.cjs": [
       "for (var require of [() => 'local']) {}",
       "console.log(require('./throwing.cjs'));",
@@ -99,6 +112,8 @@ it("resolves require calls by lexical binding and source mode", async () => {
     ["nested.cjs", "loaded\nreal\nlocal\n"],
     ["dynamic-with.cjs", "local\n"],
     ["top-level-var.cjs", "loaded\nreal\n"],
+    ["local-param.cjs", "loaded\nreal\n"],
+    ["local-fn-var.cjs", "loaded\nreal\n"],
     ["for-of-var.cjs", "local\n"],
     ["for-in-var.cjs", "shadowed\n"],
     ["with-write.cjs", "local\n"],
@@ -130,6 +145,8 @@ it("resolves require calls by lexical binding and source mode", async () => {
       .sort((left, right) => (left[0] ?? "").localeCompare(right[0] ?? "")),
   ).toEqual([
     ["create-require-esm.mjs", "loaded.cjs"],
+    ["local-fn-var.cjs", "loaded.cjs"],
+    ["local-param.cjs", "loaded.cjs"],
     ["nested.cjs", "loaded.cjs"],
     ["top-level-var.cjs", "loaded.cjs"],
   ]);
