@@ -206,6 +206,15 @@ export interface AdbPackageDetails {
 const DETAIL_LINE = /^\s+([A-Za-z][A-Za-z0-9_]*)=(.*)$/u;
 
 /**
+ * Package Manager prints its `String` fields by concatenation, so an absent
+ * `versionName` or `installerPackageName` appears as the literal text `null`
+ * (morluto/rea#3943). An empty value or that sentinel is the absence of the
+ * fact, not a package named "null"; both become the nullable result's null.
+ */
+const absentOrText = (value: string): string | null =>
+  value === "" || value === "null" ? null : value;
+
+/**
  * Project `dumpsys package PACKAGE` output. Only the listed fields are
  * extracted; the input is version-dependent and everything else is ignored
  * by design rather than guessed.
@@ -251,7 +260,7 @@ export const parseDumpsysPackageOutput = (
     const key = match[1]!;
     const value = match[2]!.trim();
     if (key === "versionName" && details.versionName === null)
-      details.versionName = value === "" ? null : value;
+      details.versionName = absentOrText(value);
     else if (key === "versionCode" && details.versionCode === null) {
       const parsed = /^(-?\d+)/u.exec(value);
       if (parsed !== null) details.versionCode = parsed[1]!;
@@ -263,7 +272,7 @@ export const parseDumpsysPackageOutput = (
       key === "installerPackageName" &&
       details.installerPackageName === null
     )
-      details.installerPackageName = value === "" ? null : value;
+      details.installerPackageName = absentOrText(value);
     else if (key === "userId" && details.userId === null) {
       const parsed = /^(\d+)/u.exec(value);
       if (parsed !== null) details.userId = Number(parsed[1]!);
