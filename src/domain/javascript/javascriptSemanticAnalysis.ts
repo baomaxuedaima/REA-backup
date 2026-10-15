@@ -60,7 +60,10 @@ import {
   electronMemberPath,
   ELECTRON_MODULE,
 } from "./javascriptElectronMemberWrites.js";
-import { range } from "./javascriptStaticAnalysisHelpers.js";
+import {
+  isWebSocketEndpointCandidate,
+  range,
+} from "./javascriptStaticAnalysisHelpers.js";
 import { semanticCoverage } from "./javascriptSemanticCoverage.js";
 import { semanticResourceLimitsIn } from "./javascriptSemanticResourceLimits.js";
 import {
@@ -242,6 +245,8 @@ export type JavaScriptOpenReceiverFact =
 export interface JavaScriptReceiverFacts {
   readonly openReceivers: ReadonlyMap<number, JavaScriptOpenReceiverFact>;
   readonly rpcClientRoots: ReadonlySet<t.Node>;
+  /** This syntax needs ambient-write facts before endpoint interpretation. */
+  readonly hasWebSocketEndpointCandidate: boolean;
 }
 
 export interface JavaScriptReceiverIndex extends JavaScriptBindingIndex {
@@ -285,6 +290,7 @@ function* classifyDefinitionReceiversSteps(
   const extensionStateReads: number[] = [];
   const roots = new Set<t.Node>();
   const clients = new Map<string, boolean>();
+  let hasWebSocketEndpointCandidate = false;
   const classifyRpcRoot = (node: t.Node): void => {
     if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node))
       return;
@@ -384,6 +390,13 @@ function* classifyDefinitionReceiversSteps(
   };
   yield* traverseJavaScriptAstSteps(program, {
     enter: (node) => {
+      if (
+        (t.isCallExpression(node) ||
+          t.isOptionalCallExpression(node) ||
+          t.isNewExpression(node)) &&
+        isWebSocketEndpointCandidate(node.callee, state)
+      )
+        hasWebSocketEndpointCandidate = true;
       classifyRpcRoot(node);
       classifyOpenReceiver(node);
     },
@@ -391,7 +404,11 @@ function* classifyDefinitionReceiversSteps(
   if (extensionStateReads.length > 0 && importsVsCodeModule(state))
     for (const start of extensionStateReads)
       facts.set(start, "extension-state");
-  return { openReceivers: facts, rpcClientRoots: roots };
+  return {
+    openReceivers: facts,
+    rpcClientRoots: roots,
+    hasWebSocketEndpointCandidate,
+  };
 }
 
 /** VS Code passes extension state through ExtensionContext, not an import. */
@@ -1032,7 +1049,6 @@ const bindImportEquals = (
   state: JavaScriptSemanticAnalysisState,
 ): void => {
   const specifier = semanticImportEqualsSpecifier(node);
-  if (specifier === null) return;
   addBinding({
     state,
     scope,
@@ -1041,7 +1057,15 @@ const bindImportEquals = (
     mutable: false,
     definitionNode: node.id,
     initializer: null,
-    directOrigin: { specifier, importedPath: [], resolutionMode: "require" },
+    ...(specifier === null
+      ? {}
+      : {
+          directOrigin: {
+            specifier,
+            importedPath: [],
+            resolutionMode: "require" as const,
+          },
+        }),
   });
 };
 

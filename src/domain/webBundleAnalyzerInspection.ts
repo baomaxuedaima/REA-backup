@@ -4,10 +4,13 @@ import { sanitizeEndpointCandidate } from "./browserObservation.js";
 import { compositeKey } from "./unicodeCodePointOrder.js";
 import type { WebPageInspection } from "./browserObservationSchemas.js";
 import type { WebBundleAnalysis } from "./webBundleAnalysis.js";
-import { traverseJavaScriptAst } from "./javascript/javascriptSemanticTraversal.js";
+import {
+  completeSemanticSteps,
+  traverseJavaScriptAst,
+} from "./javascript/javascriptSemanticTraversal.js";
 import { indexJavaScriptBindingsWithReceiversSteps } from "./javascript/javascriptSemanticAnalysis.js";
-import { completeSemanticSteps } from "./javascript/javascriptSemanticTraversal.js";
 import type { JavaScriptOpenReceiverFact } from "./javascript/javascriptSemanticAnalysis.js";
+import type { JavaScriptSemanticAnalysisState } from "./javascript/javascriptSemanticState.js";
 import { semanticStaticPropertyName } from "./javascript/javascriptAstValues.js";
 import {
   calleeName,
@@ -65,7 +68,9 @@ export const analyzeScript = (
   const index = completeSemanticSteps(
     indexJavaScriptBindingsWithReceiversSteps(file.program),
   );
-  const { receivers } = index;
+  const { bindings, receivers } = index;
+  if (receivers.hasWebSocketEndpointCandidate)
+    completeSemanticSteps(index.indexAmbientWritesSteps());
   const openReceiverFacts = receivers.openReceivers;
   const rpc = createJavaScriptRpcScan(
     script.source.artifact.text,
@@ -75,7 +80,7 @@ export const analyzeScript = (
   traverseJavaScriptAst(file, {
     enter: (node) => {
       accumulator.visitedNodes += 1;
-      inspectNode(script, node, accumulator, openReceiverFacts);
+      inspectNode(script, node, accumulator, bindings, openReceiverFacts);
       const endpoint = rpc.inspect(node);
       if (endpoint !== undefined)
         addFinding({
@@ -104,6 +109,7 @@ const inspectNode = (
   script: IncludedScript,
   node: t.Node,
   accumulator: AnalysisAccumulator,
+  bindings: JavaScriptSemanticAnalysisState,
   openReceiverFacts: ReadonlyMap<number, JavaScriptOpenReceiverFact>,
 ): void => {
   if (
@@ -142,13 +148,14 @@ const inspectNode = (
     t.isOptionalCallExpression(node) ||
     t.isNewExpression(node)
   )
-    inspectCall(script, node, accumulator, openReceiverFacts);
+    inspectCall(script, node, accumulator, bindings, openReceiverFacts);
 };
 
 const inspectCall = (
   script: IncludedScript,
   node: t.CallExpression | t.OptionalCallExpression | t.NewExpression,
   accumulator: AnalysisAccumulator,
+  bindings: JavaScriptSemanticAnalysisState,
   openReceiverFacts: ReadonlyMap<number, JavaScriptOpenReceiverFact>,
 ): void => {
   const name = calleeName(node.callee);
@@ -192,6 +199,7 @@ const inspectCall = (
     name,
     node.arguments,
     node.callee,
+    bindings,
     openReceiverFacts.get(node.start ?? -1),
   );
   if (endpoint?.kind === "candidate")

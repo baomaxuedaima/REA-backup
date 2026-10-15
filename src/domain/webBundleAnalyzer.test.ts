@@ -297,6 +297,224 @@ describe("web bundle static-analysis parity", () => {
   });
 });
 
+const socketEndpoints = (source: string) => {
+  const staticEndpoints = analyzeJavaScriptStaticSource(source).endpoints;
+  const capturedEndpoints = analyzeCapturedWebBundle(inspection(source))
+    .observations.endpoints;
+  return [staticEndpoints, capturedEndpoints].map((items) =>
+    items.map(({ value, mechanism }) => ({ value, mechanism })),
+  );
+};
+
+describe("web bundle WebSocket endpoint identity", () => {
+  it("retains qualified global WebSocket URLs through both source consumers", () => {
+    const source = `
+      new WebSocket("wss://example.test/bare");
+      new window.WebSocket("wss://example.test/window");
+      new self.WebSocket("wss://example.test/self");
+      new global.WebSocket("wss://example.test/node-global");
+      new globalThis.WebSocket("wss://example.test/global");
+      new globalThis["WebSocket"]("wss://example.test/computed");
+      new globalThis[\`WebSocket\`]("wss://example.test/template");
+      new globalThis.\\u0057ebSocket("wss://example.test/escaped");
+    `;
+    const expected = [
+      ["bare", "WebSocket"],
+      ["window", "window.WebSocket"],
+      ["self", "self.WebSocket"],
+      ["node-global", "global.WebSocket"],
+      ["global", "globalThis.WebSocket"],
+      ["computed", "globalThis.WebSocket"],
+      ["template", "globalThis.WebSocket"],
+      ["escaped", "globalThis.WebSocket"],
+    ].map(([path, constructor]) => ({
+      value: `wss://example.test/${path}`,
+      mechanism: `call:${constructor}`,
+    }));
+    expect(socketEndpoints(source)).toEqual([expected, expected]);
+  });
+
+  it("does not turn shadowed or local constructors into network endpoints", () => {
+    const source = `
+      function local(WebSocket, window, self, globalThis) {
+        new WebSocket("wss://example.test/shadowed-bare");
+        new window.WebSocket("wss://example.test/shadowed-window");
+        new self.WebSocket("wss://example.test/shadowed-self");
+        new globalThis.WebSocket("wss://example.test/shadowed-global");
+      }
+      const factory = { WebSocket: class {} };
+      new factory.WebSocket("wss://example.test/lookalike");
+      new globalThis.WebSocket("wss://example.test/control");
+    `;
+    const expected = [
+      {
+        value: "wss://example.test/control",
+        mechanism: "call:globalThis.WebSocket",
+      },
+    ];
+    expect(socketEndpoints(source)).toEqual([expected, expected]);
+  });
+
+  it.each([
+    "WebSocket = replacement;",
+    "globalThis.WebSocket = replacement;",
+    "const root = window; root.WebSocket = replacement;",
+    "delete self.WebSocket;",
+    'Object.defineProperty(globalThis, "WebSocket", { value: replacement });',
+    'const root = globalThis; Reflect.set(root, "WebSocket", replacement);',
+    "globalThis[key] = replacement;",
+  ])("does not assert a global socket endpoint after %s", (write) => {
+    expect(
+      socketEndpoints(`
+        ${write}
+        new WebSocket("wss://example.test/bare");
+        new window.WebSocket("wss://example.test/window");
+        new self.WebSocket("wss://example.test/self");
+        new globalThis.WebSocket("wss://example.test/global");
+      `),
+    ).toEqual([[], []]);
+  });
+
+  it("keeps namespace replacement distinct from constructor replacement", () => {
+    const source = `
+      window = replacement;
+      new window.WebSocket("wss://example.test/replaced-window");
+      new globalThis.WebSocket("wss://example.test/control");
+    `;
+    const expected = [
+      {
+        value: "wss://example.test/control",
+        mechanism: "call:globalThis.WebSocket",
+      },
+    ];
+    expect(socketEndpoints(source)).toEqual([expected, expected]);
+  });
+
+  it("keeps a later visible constructor write conservative rather than proving runtime order", () => {
+    expect(
+      socketEndpoints(`
+        new globalThis.WebSocket("wss://example.test/before-write");
+        globalThis.WebSocket = replacement;
+      `),
+    ).toEqual([[], []]);
+  });
+
+  it("preserves sockets after unrelated writes and writes to a local namespace", () => {
+    const source = `
+      globalThis.unrelated = replacement;
+      function local(window) { window.WebSocket = replacement; }
+      new window.WebSocket("wss://example.test/control");
+    `;
+    const expected = [
+      {
+        value: "wss://example.test/control",
+        mechanism: "call:window.WebSocket",
+      },
+    ];
+    expect(socketEndpoints(source)).toEqual([expected, expected]);
+  });
+});
+
+describe("web bundle bound WebSocket constructors", () => {
+  it.each([
+    [
+      'const WebSocket = globalThis.WebSocket; new WebSocket("wss://example.test/bound");',
+      "WebSocket",
+    ],
+    [
+      'const Captured = window.WebSocket; const Socket = Captured; new Socket("wss://example.test/bound");',
+      "Socket",
+    ],
+    [
+      'import WebSocket from "ws"; new WebSocket("wss://example.test/bound");',
+      "WebSocket",
+    ],
+    [
+      'import { WebSocket as Socket } from "ws"; new Socket("wss://example.test/bound");',
+      "Socket",
+    ],
+    [
+      'import * as ws from "ws"; new ws[`WebSocket`]("wss://example.test/bound");',
+      "ws.WebSocket",
+    ],
+    [
+      'import Imported from "ws"; const Socket = Imported; new Socket("wss://example.test/bound");',
+      "Socket",
+    ],
+    [
+      'const WebSocket = require("ws"); new WebSocket("wss://example.test/bound");',
+      "WebSocket",
+    ],
+    [
+      'import WebSocket = require("ws"); new WebSocket("wss://example.test/bound");',
+      "WebSocket",
+    ],
+    [
+      'const Imported = require("ws"); const Socket = Imported; new Socket("wss://example.test/bound");',
+      "Socket",
+    ],
+    [
+      'const { WebSocket } = globalThis; new WebSocket("wss://example.test/bound");',
+      "WebSocket",
+    ],
+    [
+      'const { [`WebSocket`]: Socket } = window; new Socket("wss://example.test/bound");',
+      "Socket",
+    ],
+    [
+      'function connect() { new WebSocket("wss://example.test/bound"); } const WebSocket = globalThis.WebSocket; connect();',
+      "WebSocket",
+    ],
+    [
+      'const connect = () => new Socket("wss://example.test/bound"); const { WebSocket: Socket } = globalThis; connect();',
+      "Socket",
+    ],
+    [
+      'const connect = (function () { new Socket("wss://example.test/bound"); }).bind(null); const Socket = globalThis.WebSocket; connect();',
+      "Socket",
+    ],
+  ])(
+    "retains a proven constructor binding in both consumers: %s",
+    (source, name) => {
+      const expected = [
+        { value: "wss://example.test/bound", mechanism: `call:${name}` },
+      ];
+      expect(socketEndpoints(source)).toEqual([expected, expected]);
+    },
+  );
+
+  it.each([
+    'const WebSocket = class {}; new WebSocket("wss://example.test/local");',
+    'import WebSocket from "other-library"; new WebSocket("wss://example.test/local");',
+    'import type WebSocket from "ws"; new WebSocket("wss://example.test/local");',
+    'import { type WebSocket } from "ws"; new WebSocket("wss://example.test/local");',
+    'let Socket = globalThis.WebSocket; Socket = replacement; new Socket("wss://example.test/local");',
+    'import WebSocket from "ws"; WebSocket = replacement; new WebSocket("wss://example.test/local");',
+    'new WebSocket("wss://example.test/local"); const WebSocket = globalThis.WebSocket;',
+    'const WebSocket = Socket; const Socket = WebSocket; new Socket("wss://example.test/local");',
+    'if (condition) { var WebSocket = globalThis.WebSocket; } new WebSocket("wss://example.test/local");',
+    'function local(globalThis) { const WebSocket = globalThis.WebSocket; new WebSocket("wss://example.test/local"); }',
+    'const Socket = globalThis.WebSocket; new Socket("wss://example.test/local"); globalThis.WebSocket = replacement;',
+    'import Socket from "ws"; Socket.WebSocket = replacement; new Socket.WebSocket("wss://example.test/local");',
+    'function local(require) { const WebSocket = require("ws"); new WebSocket("wss://example.test/local"); }',
+    'const WebSocket = require("ws"); WebSocket = replacement; new WebSocket("wss://example.test/local");',
+    'import type WebSocket = require("ws"); new WebSocket("wss://example.test/local");',
+    'const { [key]: WebSocket } = globalThis; new WebSocket("wss://example.test/local");',
+    'const { WebSocket = replacement } = globalThis; new WebSocket("wss://example.test/local");',
+    'const { WebSocket } = globalThis; globalThis.WebSocket = replacement; new WebSocket("wss://example.test/local");',
+    '(function connect() { new WebSocket("wss://example.test/local"); })(); const WebSocket = globalThis.WebSocket;',
+    'new (function () { new Socket("wss://probe.test/new"); })(); const Socket = globalThis.WebSocket;',
+    '(function () { new Socket("wss://probe.test/call"); }).call(null); const Socket = globalThis.WebSocket;',
+    '(function () { new Socket("wss://probe.test/apply"); }).apply(null, []); const Socket = globalThis.WebSocket;',
+    'new WebSocket("wss://example.test/local"); import WebSocket = require("ws");',
+  ])(
+    "does not infer constructor identity from an unresolved binding: %s",
+    (source) => {
+      expect(socketEndpoints(source)).toEqual([[], []]);
+    },
+  );
+});
+
 describe("web bundle API classification parity", () => {
   it("reads storage open versions as storage rather than endpoints in both analyzers", () => {
     const source = `

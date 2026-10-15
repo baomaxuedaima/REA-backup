@@ -297,16 +297,25 @@ export const isUnmodifiedGlobalReference = (
   callee: t.Node,
   state: JavaScriptSemanticAnalysisState,
   name: string,
+  projection: readonly string[] = [],
 ): boolean => {
   const node = unwrapJavaScriptExpression(callee).node;
   if (state.ambientWrites.covers(["global", name])) return false;
-  if (isUnshadowedGlobal(node, state, name)) return true;
+  if (projection.length === 0 && isUnshadowedGlobal(node, state, name))
+    return true;
+  const selected = projection.length === 1 && projection[0] === name;
   if (
-    !t.isMemberExpression(node) ||
-    semanticStaticPropertyKey(node.property, node.computed) !== name
+    !selected &&
+    (projection.length !== 0 ||
+      !t.isMemberExpression(node) ||
+      semanticStaticPropertyKey(node.property, node.computed) !== name)
   )
     return false;
-  const root = unwrapJavaScriptExpression(node.object).node;
+  const root = selected
+    ? node
+    : t.isMemberExpression(node)
+      ? unwrapJavaScriptExpression(node.object).node
+      : node;
   const namespace = globalObjectName(root, state);
   return (
     namespace !== undefined &&

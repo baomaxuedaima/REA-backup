@@ -114,7 +114,7 @@ export const inspectCall = (
       kind: "service-worker",
       specifier: undefined,
     });
-  inspectEndpointCall(node, name, first, context);
+  inspectEndpointCall(node, name, first, context, bindings);
   inspectStorageCall(node, name, first, context);
   if (first === "audio" || first === "video")
     noteMediaElementPreloads(node, accumulator);
@@ -419,6 +419,7 @@ const inspectEndpointCall = (
   name: string,
   first: string | undefined,
   context: FindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
 ): void => {
   const route = STATIC_ROUTE_CALL_NAMES.some(
     (candidate) => name === candidate || name.endsWith(`.${candidate}`),
@@ -435,6 +436,7 @@ const inspectEndpointCall = (
     name,
     node.arguments,
     node.callee,
+    bindings,
     receiverFact,
   );
   if (endpoint !== undefined)
