@@ -688,6 +688,20 @@ enforces the exact union, including partner fields and exclusions that the
 advertised projection does not express, so a client must not rely on the
 advertised schema to reject an incomplete group. Tests validate the schemas
 after SDK conversion and check advertised validation and actual calls.
+
+Boolean literals are advertised as plain `boolean` fields. Canonical contracts
+select union branches with `z.literal(true)` and `z.literal(false)`, which
+project as `const`; some clients render `const` as a one-member `enum`, and
+Gemini function declarations accept only string enum members, so one boolean
+literal rejected every tool ([#4025](https://github.com/morluto/rea/issues/4025)).
+The projection drops the boolean `const`, keeps the declared type, default,
+and description, and folds alternatives that differ only in that literal into
+one boolean field. Nested object alternatives keep their structure with the
+discriminating field typed as `boolean`. String literals stay `const` because
+every supported dialect accepts them. The canonical Zod schema still enforces
+the exact literal and the branch it selects; the advertised projection alone
+does not express that choice. Tests check every advertised input schema in
+both profiles for non-string `const` and `enum` values.
 Individual model APIs can impose additional nesting limits; complete producer
 captures can exceed ten structural levels.
 

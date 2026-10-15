@@ -57,13 +57,72 @@ const referencedDescription = (
   return undefined;
 };
 
+const booleanLiteralKeys = new Set([
+  "type",
+  "default",
+  "description",
+  "title",
+  "examples",
+]);
+
+const isPlainBooleanSchema = (
+  value: unknown,
+): value is Readonly<Record<string, unknown>> =>
+  isObject(value) &&
+  value.type === "boolean" &&
+  Object.keys(value).every((key) => booleanLiteralKeys.has(key));
+
+const firstDefined = (
+  schemas: readonly Readonly<Record<string, unknown>>[],
+  key: string,
+): Readonly<Record<string, unknown>> => {
+  const owner = schemas.find((schema) => schema[key] !== undefined);
+  return owner === undefined ? {} : { [key]: owner[key] };
+};
+
+// Some clients render `const` as a one-member `enum`, and Google function
+// declarations accept only string enum members, so one advertised boolean
+// literal fails the whole catalog (morluto/rea#4025). Present a boolean
+// literal as its declared type and fold alternatives that differ only in the
+// literal into one boolean. The canonical Zod schema still enforces the
+// exact literal and the union branch it selects.
+const presentBooleanLiterals = (
+  schema: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  const { const: literal, ...withoutLiteral } = schema;
+  const presented =
+    typeof literal === "boolean" &&
+    (withoutLiteral.type === undefined || withoutLiteral.type === "boolean")
+      ? { ...withoutLiteral, type: "boolean" }
+      : schema;
+  for (const combinator of ["anyOf", "oneOf"]) {
+    const alternatives = presented[combinator];
+    if (
+      !Array.isArray(alternatives) ||
+      alternatives.length === 0 ||
+      !alternatives.every(isPlainBooleanSchema)
+    )
+      continue;
+    const { [combinator]: _alternatives, ...rest } = presented;
+    if (rest.type !== undefined && rest.type !== "boolean") continue;
+    return {
+      ...firstDefined(alternatives, "description"),
+      ...firstDefined(alternatives, "title"),
+      ...firstDefined(alternatives, "default"),
+      ...rest,
+      type: "boolean",
+    };
+  }
+  return presented;
+};
+
 const describeSchema = (
   schema: unknown,
   root: Readonly<Record<string, unknown>>,
   describeProperty: (property: string) => string | undefined,
 ): unknown => {
   if (!isObject(schema)) return schema;
-  return Object.fromEntries(
+  const described = Object.fromEntries(
     Object.entries(schema).map(([key, value]) => {
       if (schemaMaps.has(key) && isObject(value))
         return [
@@ -103,6 +162,7 @@ const describeSchema = (
       return [key, value];
     }),
   );
+  return presentBooleanLiterals(described);
 };
 
 const objectBranch = (
