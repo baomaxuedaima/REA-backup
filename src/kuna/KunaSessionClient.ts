@@ -35,6 +35,7 @@ import type { ProviderProcessSupervisor } from "../process/ProviderProcess.js";
 import {
   copyAndHash,
   KUNA_INVENTORY_OUTPUT_BYTES,
+  kunaInventoryArguments,
   runKunaCommand,
   type KunaProcessLauncher,
 } from "./KunaCommand.js";
@@ -1167,7 +1168,10 @@ export class KunaSessionClient implements AnalysisClient {
     if (!workspace.ok) return workspace;
     const run = await runKunaCommand({
       installation,
-      arguments: ["functions", workspace.value.input, "--json"],
+      arguments: kunaInventoryArguments(
+        workspace.value.input,
+        installation.configuration.jobs,
+      ),
       workspace: workspace.value.root.path,
       operation: "list_procedures",
       timeoutMs: installation.configuration.functionTimeoutMs,

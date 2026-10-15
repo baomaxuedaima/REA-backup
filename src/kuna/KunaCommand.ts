@@ -35,6 +35,16 @@ import { KUNA_PROVIDER_ID } from "./KunaRelease.js";
  */
 export const KUNA_INVENTORY_OUTPUT_BYTES = 128 * 1024 * 1024;
 
+/**
+ * The `kuna functions` inventory of one image. Its `--jobs` decode lanes
+ * return the serial inventory byte for byte, so the configured jobs change only
+ * how fast discovery runs (a 254 MB Mach-O: 66 s serially, 23 s with 8 lanes).
+ */
+export const kunaInventoryArguments = (
+  input: string,
+  jobs: number,
+): readonly string[] => ["functions", input, "--json", "--jobs", String(jobs)];
+
 /** Test seam for the owned process launcher; production uses the default. */
 export type KunaProcessLauncher = (
   options: OwnedProviderProcessSpawnOptions,

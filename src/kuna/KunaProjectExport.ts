@@ -16,6 +16,7 @@ import type { ProviderProcessSupervisor } from "../process/ProviderProcess.js";
 import {
   copyAndHash,
   KUNA_INVENTORY_OUTPUT_BYTES,
+  kunaInventoryArguments,
   runKunaCommand,
   type KunaProcessLauncher,
 } from "./KunaCommand.js";
@@ -209,7 +210,7 @@ export const exportKunaProject = async (
 
   request.onStatus({ phase: "inventory", inventoryFunctions: null });
   const listed = await run(
-    ["functions", input, "--json"],
+    kunaInventoryArguments(input, configuration.jobs),
     KUNA_INVENTORY_OUTPUT_BYTES,
   );
   if (!listed.ok) return listed.outcome;

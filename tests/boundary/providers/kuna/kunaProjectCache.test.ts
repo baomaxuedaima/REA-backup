@@ -168,7 +168,13 @@ it("publishes a verified export and serves later requests from the cache", async
   // Kuna listed and decompiled a staged copy from REA's own HOME, in reference mode.
   const [listing] = await callsOf(kuna, "functions");
   const [exported] = await callsOf(kuna, "decompile-project");
-  expect(listing?.argv).toEqual(["functions", exported?.argv[1], "--json"]);
+  expect(listing?.argv).toEqual([
+    "functions",
+    exported?.argv[1],
+    "--json",
+    "--jobs",
+    "1",
+  ]);
   expect(exported?.argv.slice(2)).toEqual([
     "-o",
     expect.stringContaining(join("cache", "staging")),
