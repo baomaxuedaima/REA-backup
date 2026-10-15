@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { analyzeJavaScriptStaticSource } from "./javascriptStaticAnalysis.js";
 
+it("shares erased call-target names with endpoint consumers without inventing dynamic keys", () => {
+  const analysis = analyzeJavaScriptStaticSource(`
+    (client.get as typeof client.get)("/api/items");
+    (navigator as typeof navigator).sendBeacon("/api/telemetry", payload);
+    (client[method] as typeof client.get)("/api/unknown");
+    ((choose ? client.get : client.post) as typeof client.get)("/api/conditional");
+  `);
+  expect(analysis.parse_error_count).toBe(0);
+  expect(
+    analysis.endpoints.map(({ value, mechanism }) => [value, mechanism]),
+  ).toEqual([
+    ["/api/items", "call:client.get"],
+    ["/api/telemetry", "call:navigator.sendBeacon"],
+  ]);
+});
+
 it("retains endpoint observations for exact template and TypeScript member keys", () => {
   for (const [get, beacon] of [
     ['"get"', '"sendBeacon"'],
